@@ -66,6 +66,10 @@ func main() {
 		err = cmdOpen(ctx, st, args)
 	case "open-all":
 		err = cmdOpenAll(ctx, st, args)
+	case "zathura":
+		err = cmdZathura(ctx, st, args)
+	case "zathura-pick":
+		err = cmdZathuraPick(ctx, st)
 	default:
 		err = fmt.Errorf("unknown command %q", cmd)
 	}
@@ -196,6 +200,118 @@ func cmdOpenAll(ctx context.Context, st *store.Store, args []string) error {
 	return cmd.Start()
 }
 
+func cmdZathura(ctx context.Context, st *store.Store, args []string) error {
+	docs, err := st.ListDocuments(ctx)
+	if err != nil {
+		return err
+	}
+	if len(docs) == 0 {
+		return errors.New("no documents found")
+	}
+
+	selected := docs
+	if len(args) > 0 && args[0] != "all" {
+		doc, err := st.GetDocument(ctx, args[0])
+		if err != nil {
+			return err
+		}
+		selected = []store.Document{*doc}
+	}
+
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return err
+	}
+	cacheDir = filepath.Join(cacheDir, "pdfdb", "zathura")
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		return err
+	}
+
+	paths := make([]string, 0, len(selected))
+	for _, doc := range selected {
+		data, err := st.Reconstruct(ctx, doc.ID)
+		if err != nil {
+			return err
+		}
+		path := filepath.Join(cacheDir, doc.Slug+"-"+doc.SHA256[:8]+".pdf")
+		tmpPath := path + ".tmp"
+		if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+			return err
+		}
+		if err := os.Rename(tmpPath, path); err != nil {
+			return err
+		}
+		if err := os.Chmod(path, 0o444); err != nil {
+			return err
+		}
+		paths = append(paths, path)
+	}
+
+	_ = exec.CommandContext(ctx, "open", "-a", "Zathura").Run()
+	time.Sleep(600 * time.Millisecond)
+	_ = exec.CommandContext(ctx, "open", "-a", "Zathura", paths[0]).Run()
+	time.Sleep(600 * time.Millisecond)
+
+	for _, path := range paths {
+		cmd := exec.CommandContext(ctx, "open", "-a", "Zathura", path)
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func cmdZathuraPick(ctx context.Context, st *store.Store) error {
+	docs, err := st.ListDocuments(ctx)
+	if err != nil {
+		return err
+	}
+	if len(docs) == 0 {
+		return errors.New("no documents found")
+	}
+
+	items := make([]string, 0, len(docs))
+	byLabel := make(map[string]string, len(docs))
+	for _, doc := range docs {
+		label := fmt.Sprintf("%s  (%d pages)", doc.Title, doc.PageCount)
+		items = append(items, label)
+		byLabel[label] = doc.Slug
+	}
+
+	script := `set picked to choose from list {` + strings.Join(appleScriptList(items), ", ") + `} with title "pdfdb" with prompt "Open a database PDF in Zathura" OK button name "Open" cancel button name "Cancel"` + "\n" +
+		`if picked is false then return ""` + "\n" +
+		`return item 1 of picked`
+	out, err := exec.CommandContext(ctx, "osascript", "-e", script).Output()
+	if err != nil {
+		return err
+	}
+	label := strings.TrimSpace(string(out))
+	if label == "" {
+		return nil
+	}
+	slug, ok := byLabel[label]
+	if !ok {
+		return fmt.Errorf("unknown selection %q", label)
+	}
+	return cmdZathura(ctx, st, []string{slug})
+}
+
+func appleScriptList(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, appleScriptString(value))
+	}
+	return out
+}
+
+func appleScriptString(value string) string {
+	value = strings.ReplaceAll(value, `\`, `\\`)
+	value = strings.ReplaceAll(value, `"`, `\"`)
+	return `"` + value + `"`
+}
+
 func usage() {
 	fmt.Println(`pdfdb commands:
   init-db                      create or update Postgres schema
@@ -206,7 +322,9 @@ func usage() {
   serve [host:port]            run the range-capable API
   mount <mountpoint>           mount read-only macFUSE filesystem
   open <id-or-slug|all> [mount] open mounted PDF(s) in Zathura
-  open-all [mount]              open every mounted PDF in Zathura`)
+  open-all [mount]              open every mounted PDF in Zathura
+  zathura [id-or-slug|all]      start /Applications/Zathura.app from DB cache
+  zathura-pick                  choose a database PDF and open it in Zathura`)
 }
 
 func expandHome(path string) string {

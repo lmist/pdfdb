@@ -75,4 +75,14 @@ pdfdb serve [host:port]            run the HTTP API with PDF range support
 pdfdb mount <mountpoint>           mount a read-only database-backed PDF filesystem
 pdfdb open <id-or-slug|all> [mount] open mounted PDF(s) in Zathura
 pdfdb open-all [mount]             open every mounted PDF in Zathura
+pdfdb zathura [id-or-slug|all]     start /Applications/Zathura.app from DB cache
+pdfdb zathura-pick                 choose a database PDF and open it in Zathura
 ```
+
+For a database-backed picker inside Zathura, add this to `~/.config/zathura/zathurarc`:
+
+```text
+map <C-o> exec /Users/lou/go/bin/pdfdb zathura-pick
+```
+
+Adjust the binary path if `go env GOPATH` is not `/Users/lou/go`. That gives Zathura a database-connected open action: press `Ctrl-o`, pick from the pdfdb library, and the selected PDF opens in the desktop Zathura app. A true Zathura plugin is a renderer plugin for a MIME type, not a general UI sidebar extension; the installed API exposes document/page/index/render hooks, not a global file-tree panel.
