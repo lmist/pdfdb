@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -65,15 +66,47 @@ func requireFUSE() error {
 		"/Library/Filesystems/osxfuse.fs",
 	} {
 		if _, err := os.Stat(path); err == nil {
-			return nil
+			if hasFUSEDevice() {
+				return nil
+			}
+			return errors.New("macFUSE is installed but not loaded; approve macFUSE in System Settings -> Privacy & Security, reboot if requested, then retry")
 		}
 	}
 	return errors.New("macFUSE is required for pdfdb mount; install it from https://macfuse.github.io/ and retry")
 }
 
+func hasFUSEDevice() bool {
+	if entries, err := os.ReadDir("/dev"); err == nil {
+		for _, entry := range entries {
+			name := strings.ToLower(entry.Name())
+			if strings.Contains(name, "fuse") {
+				return true
+			}
+		}
+	}
+	out, err := exec.Command("kextstat").Output()
+	if err == nil && strings.Contains(strings.ToLower(string(out)), "fuse") {
+		return true
+	}
+	out, err = exec.Command("kmutil", "showloaded").Output()
+	return err == nil && strings.Contains(strings.ToLower(string(out)), "fuse")
+}
+
 type rootNode struct {
 	fs.Inode
 	store *store.Store
+}
+
+func (r *rootNode) OnAdd(ctx context.Context) {
+	docs, err := r.store.ListDocuments(ctx)
+	if err != nil {
+		return
+	}
+	for _, doc := range docs {
+		stable := fs.StableAttr{Mode: gofuse.S_IFREG, Ino: inodeFor(doc.SHA256)}
+		child := r.NewPersistentInode(ctx, &fileNode{store: r.store, doc: doc}, stable)
+		r.AddChild(fileName(doc), child, true)
+	}
 }
 
 func (r *rootNode) Readdir(ctx context.Context) (fs.DirStream, syscall.Errno) {
