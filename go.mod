@@ -1,4 +1,4 @@
-module pdfdb
+module github.com/lmist/pdfdb
 
 go 1.26
 

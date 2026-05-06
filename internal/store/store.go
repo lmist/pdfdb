@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"pdfdb/internal/pdfmeta"
+	"github.com/lmist/pdfdb/internal/pdfmeta"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"

@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"pdfdb/internal/store"
+	"github.com/lmist/pdfdb/internal/store"
 )
 
 type Server struct {

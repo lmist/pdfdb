@@ -10,10 +10,10 @@ import (
 	"strings"
 	"syscall"
 
-	"pdfdb/internal/store"
+	"github.com/lmist/pdfdb/internal/store"
 
-	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/hanwen/go-fuse/v2/fs"
+	gofuse "github.com/hanwen/go-fuse/v2/fuse"
 )
 
 type FS struct {

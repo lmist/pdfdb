@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	pdffuse "pdfdb/internal/fuse"
-	"pdfdb/internal/server"
-	"pdfdb/internal/store"
+	pdffuse "github.com/lmist/pdfdb/internal/fuse"
+	"github.com/lmist/pdfdb/internal/server"
+	"github.com/lmist/pdfdb/internal/store"
 )
 
 var seedURLs = []string{
@@ -64,6 +64,8 @@ func main() {
 		err = cmdMount(ctx, st, args)
 	case "open":
 		err = cmdOpen(ctx, st, args)
+	case "open-all":
+		err = cmdOpenAll(ctx, st, args)
 	default:
 		err = fmt.Errorf("unknown command %q", cmd)
 	}
@@ -135,6 +137,9 @@ func cmdOpen(ctx context.Context, st *store.Store, args []string) error {
 	if len(args) == 0 || len(args) > 2 {
 		return errors.New("open needs a document id/slug and optional mountpoint")
 	}
+	if args[0] == "all" {
+		return cmdOpenAll(ctx, st, args[1:])
+	}
 	mountpoint := "~/Mounts/pdfdb"
 	if len(args) == 2 {
 		mountpoint = args[1]
@@ -157,6 +162,40 @@ func cmdOpen(ctx context.Context, st *store.Store, args []string) error {
 	return cmd.Start()
 }
 
+func cmdOpenAll(ctx context.Context, st *store.Store, args []string) error {
+	if len(args) > 1 {
+		return errors.New("open-all accepts an optional mountpoint")
+	}
+	mountpoint := "~/Mounts/pdfdb"
+	if len(args) == 1 {
+		mountpoint = args[0]
+	}
+	docs, err := st.ListDocuments(ctx)
+	if err != nil {
+		return err
+	}
+	if len(docs) == 0 {
+		return errors.New("no documents found")
+	}
+	zathura, err := exec.LookPath("zathura")
+	if err != nil {
+		return errors.New("zathura is not on PATH")
+	}
+	expandedMount := expandHome(mountpoint)
+	argv := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		path := filepath.Join(expandedMount, doc.Slug+".pdf")
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("mounted PDF %s is not available; run `pdfdb mount %s` in another shell first: %w", path, mountpoint, err)
+		}
+		argv = append(argv, path)
+	}
+	cmd := exec.CommandContext(ctx, zathura, argv...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Start()
+}
+
 func usage() {
 	fmt.Println(`pdfdb commands:
   init-db                      create or update Postgres schema
@@ -166,7 +205,8 @@ func usage() {
   verify                       verify manifests and reconstructed SHA-256 values
   serve [host:port]            run the range-capable API
   mount <mountpoint>           mount read-only macFUSE filesystem
-  open <id-or-slug> [mount]    open a mounted PDF in Zathura`)
+  open <id-or-slug|all> [mount] open mounted PDF(s) in Zathura
+  open-all [mount]              open every mounted PDF in Zathura`)
 }
 
 func expandHome(path string) string {
