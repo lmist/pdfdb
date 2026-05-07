@@ -6,5 +6,10 @@ bin/
 dist/
 web/dist/
 web/node_modules/
+!desktop/frontend/dist/
+!desktop/frontend/dist/**
+desktop/build/bin/
+desktop/frontend/node_modules/
+desktop/frontend/package.json.md5
 
 .DS_Store

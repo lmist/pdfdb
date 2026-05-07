@@ -8,13 +8,14 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
-	pdffuse "github.com/lmist/pdfdb/internal/fuse"
+	"github.com/lmist/pdfdb/internal/doccache"
+	"github.com/lmist/pdfdb/internal/profiles"
 	"github.com/lmist/pdfdb/internal/server"
 	"github.com/lmist/pdfdb/internal/store"
+	"github.com/lmist/pdfdb/internal/zathura"
 )
 
 var seedURLs = []string{
@@ -40,6 +41,12 @@ func main() {
 		usage()
 		return
 	}
+	if cmd == "profile" {
+		if err := cmdProfile(args); err != nil {
+			fatal(err)
+		}
+		return
+	}
 
 	st, err := openStore(ctx)
 	if err != nil {
@@ -60,8 +67,6 @@ func main() {
 		err = cmdVerify(ctx, st)
 	case "serve":
 		err = cmdServe(st, args)
-	case "mount":
-		err = cmdMount(ctx, st, args)
 	case "open":
 		err = cmdOpen(ctx, st, args)
 	case "open-all":
@@ -78,8 +83,63 @@ func main() {
 	}
 }
 
+func cmdProfile(args []string) error {
+	if len(args) == 0 {
+		return errors.New("profile needs list, save, use, or delete")
+	}
+	mgr, err := profiles.NewDefault()
+	if err != nil {
+		return err
+	}
+	switch args[0] {
+	case "list":
+		items, err := mgr.List()
+		if err != nil {
+			return err
+		}
+		for _, item := range items {
+			prefix := " "
+			if item.Active {
+				prefix = "*"
+			}
+			fmt.Printf("%s %s\n", prefix, item.Name)
+		}
+		return nil
+	case "save":
+		name := profiles.DefaultProfileName
+		if len(args) > 1 {
+			name = args[1]
+		}
+		databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+		if databaseURL == "" {
+			return errors.New("DATABASE_URL is not set; refusing to save an empty profile")
+		}
+		if err := mgr.Save(name, databaseURL); err != nil {
+			return err
+		}
+		fmt.Printf("saved active profile %q in macOS Keychain\n", name)
+		return nil
+	case "use":
+		if len(args) != 2 {
+			return errors.New("profile use needs a profile name")
+		}
+		return mgr.SetActive(args[1])
+	case "delete":
+		if len(args) != 2 {
+			return errors.New("profile delete needs a profile name")
+		}
+		return mgr.Delete(args[1])
+	default:
+		return fmt.Errorf("unknown profile command %q", args[0])
+	}
+}
+
 func openStore(ctx context.Context) (*store.Store, error) {
-	return store.Open(ctx, os.Getenv("DATABASE_URL"))
+	databaseURL, err := profiles.ResolveDatabaseURL()
+	if err != nil {
+		return nil, err
+	}
+	return store.Open(ctx, databaseURL)
 }
 
 func cmdIngest(ctx context.Context, st *store.Store, args []string) error {
@@ -129,51 +189,29 @@ func cmdServe(st *store.Store, args []string) error {
 	return server.New(st).ListenAndServe(addr)
 }
 
-func cmdMount(ctx context.Context, st *store.Store, args []string) error {
-	if len(args) != 1 {
-		return errors.New("mount needs a mountpoint")
-	}
-	fmt.Printf("mounting read-only pdfdb filesystem at %s\n", args[0])
-	return pdffuse.New(st).Mount(ctx, expandHome(args[0]))
-}
-
 func cmdOpen(ctx context.Context, st *store.Store, args []string) error {
-	if len(args) == 0 || len(args) > 2 {
-		return errors.New("open needs a document id/slug and optional mountpoint")
+	if len(args) != 1 {
+		return errors.New("open needs a document id/slug or all")
 	}
 	if args[0] == "all" {
-		return cmdOpenAll(ctx, st, args[1:])
-	}
-	mountpoint := "~/Mounts/pdfdb"
-	if len(args) == 2 {
-		mountpoint = args[1]
+		return cmdOpenAll(ctx, st, nil)
 	}
 	doc, err := st.GetDocument(ctx, args[0])
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(expandHome(mountpoint), doc.Slug+".pdf")
-	if _, err := os.Stat(path); err != nil {
-		return fmt.Errorf("mounted PDF %s is not available; run `pdfdb mount %s` in another shell first: %w", path, mountpoint, err)
-	}
-	zathura, err := exec.LookPath("zathura")
+	cache, err := doccache.NewDefault()
 	if err != nil {
-		return errors.New("zathura is not on PATH")
+		return err
 	}
-	cmd := exec.CommandContext(ctx, zathura, path)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Start()
+	path, err := cache.Ensure(ctx, st, *doc)
+	if err != nil {
+		return err
+	}
+	return zathura.Open(ctx, path)
 }
 
 func cmdOpenAll(ctx context.Context, st *store.Store, args []string) error {
-	if len(args) > 1 {
-		return errors.New("open-all accepts an optional mountpoint")
-	}
-	mountpoint := "~/Mounts/pdfdb"
-	if len(args) == 1 {
-		mountpoint = args[0]
-	}
 	docs, err := st.ListDocuments(ctx)
 	if err != nil {
 		return err
@@ -181,23 +219,20 @@ func cmdOpenAll(ctx context.Context, st *store.Store, args []string) error {
 	if len(docs) == 0 {
 		return errors.New("no documents found")
 	}
-	zathura, err := exec.LookPath("zathura")
+	cache, err := doccache.NewDefault()
 	if err != nil {
-		return errors.New("zathura is not on PATH")
+		return err
 	}
-	expandedMount := expandHome(mountpoint)
-	argv := make([]string, 0, len(docs))
 	for _, doc := range docs {
-		path := filepath.Join(expandedMount, doc.Slug+".pdf")
-		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("mounted PDF %s is not available; run `pdfdb mount %s` in another shell first: %w", path, mountpoint, err)
+		path, err := cache.Ensure(ctx, st, doc)
+		if err != nil {
+			return err
 		}
-		argv = append(argv, path)
+		if err := zathura.Open(ctx, path); err != nil {
+			return err
+		}
 	}
-	cmd := exec.CommandContext(ctx, zathura, argv...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Start()
+	return nil
 }
 
 func cmdZathura(ctx context.Context, st *store.Store, args []string) error {
@@ -218,30 +253,15 @@ func cmdZathura(ctx context.Context, st *store.Store, args []string) error {
 		selected = []store.Document{*doc}
 	}
 
-	cacheDir, err := os.UserCacheDir()
+	cache, err := doccache.NewDefault()
 	if err != nil {
-		return err
-	}
-	cacheDir = filepath.Join(cacheDir, "pdfdb", "zathura")
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return err
 	}
 
 	paths := make([]string, 0, len(selected))
 	for _, doc := range selected {
-		data, err := st.Reconstruct(ctx, doc.ID)
+		path, err := cache.Ensure(ctx, st, doc)
 		if err != nil {
-			return err
-		}
-		path := filepath.Join(cacheDir, doc.Slug+"-"+doc.SHA256[:8]+".pdf")
-		tmpPath := path + ".tmp"
-		if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
-			return err
-		}
-		if err := os.Rename(tmpPath, path); err != nil {
-			return err
-		}
-		if err := os.Chmod(path, 0o444); err != nil {
 			return err
 		}
 		paths = append(paths, path)
@@ -320,25 +340,11 @@ func usage() {
   list                         list documents
   verify                       verify manifests and reconstructed SHA-256 values
   serve [host:port]            run the range-capable API
-  mount <mountpoint>           mount read-only macFUSE filesystem
-  open <id-or-slug|all> [mount] open mounted PDF(s) in Zathura
-  open-all [mount]              open every mounted PDF in Zathura
+  open <id-or-slug|all>        open cached PDF(s) in Zathura
+  open-all                      open every cached PDF in Zathura
   zathura [id-or-slug|all]      start /Applications/Zathura.app from DB cache
-  zathura-pick                  choose a database PDF and open it in Zathura`)
-}
-
-func expandHome(path string) string {
-	if path == "~" {
-		if home, err := os.UserHomeDir(); err == nil {
-			return home
-		}
-	}
-	if strings.HasPrefix(path, "~/") {
-		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, path[2:])
-		}
-	}
-	return path
+  zathura-pick                  choose a database PDF and open it in Zathura
+  profile list|save|use|delete  manage Keychain-backed database profiles`)
 }
 
 func fatal(err error) {
