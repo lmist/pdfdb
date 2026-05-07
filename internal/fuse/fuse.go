@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/lmist/pdfdb/internal/store"
@@ -145,6 +146,9 @@ type fileNode struct {
 	fs.Inode
 	store *store.Store
 	doc   store.Document
+
+	mu   sync.Mutex
+	data []byte
 }
 
 func (f *fileNode) Getattr(ctx context.Context, fh fs.FileHandle, out *gofuse.AttrOut) syscall.Errno {
@@ -157,27 +161,41 @@ func (f *fileNode) Open(ctx context.Context, flags uint32) (fs.FileHandle, uint3
 	if flags&syscall.O_ACCMODE != syscall.O_RDONLY {
 		return nil, 0, syscall.EROFS
 	}
-	return &fileHandle{store: f.store, doc: f.doc}, gofuse.FOPEN_KEEP_CACHE, 0
+	data, err := f.load(ctx)
+	if err != nil {
+		return nil, 0, syscall.EIO
+	}
+	return &fileHandle{doc: f.doc, data: data}, gofuse.FOPEN_KEEP_CACHE, 0
+}
+
+func (f *fileNode) load(ctx context.Context) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.data != nil {
+		return f.data, nil
+	}
+	data, err := f.store.Reconstruct(ctx, f.doc.ID)
+	if err != nil {
+		return nil, err
+	}
+	f.data = data
+	return f.data, nil
 }
 
 type fileHandle struct {
-	store *store.Store
-	doc   store.Document
+	doc  store.Document
+	data []byte
 }
 
 func (h *fileHandle) Read(ctx context.Context, dest []byte, off int64) (gofuse.ReadResult, syscall.Errno) {
-	if off >= h.doc.SizeBytes {
+	if off >= int64(len(h.data)) {
 		return gofuse.ReadResultData(nil), 0
 	}
 	end := off + int64(len(dest))
-	if end > h.doc.SizeBytes {
-		end = h.doc.SizeBytes
+	if end > int64(len(h.data)) {
+		end = int64(len(h.data))
 	}
-	data, err := h.store.ReadRange(ctx, h.doc.ID, off, end)
-	if err != nil {
-		return nil, syscall.EIO
-	}
-	return gofuse.ReadResultData(data), 0
+	return gofuse.ReadResultData(h.data[off:end]), 0
 }
 
 func fileName(doc store.Document) string {
