@@ -1,7 +1,8 @@
 :root {
   color-scheme: dark;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Helvetica Neue", sans-serif;
-  font-feature-settings: "ss01", "cv11", "tnum";
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Helvetica Neue', sans-serif;
+  font-feature-settings: 'ss01', 'cv11', 'tnum';
   background: transparent;
   color: #ebecef;
   -webkit-font-smoothing: antialiased;
@@ -48,7 +49,11 @@ button {
   font-weight: 500;
   letter-spacing: 0.01em;
   cursor: pointer;
-  transition: background 120ms ease, border-color 120ms ease, color 120ms ease, transform 120ms ease;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
 }
 
 button:hover:not(:disabled) {
@@ -104,7 +109,10 @@ input {
   color: #ebecef;
   height: 30px;
   padding: 0 11px;
-  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease,
+    box-shadow 120ms ease;
 }
 
 input::placeholder {
@@ -262,7 +270,9 @@ input:focus {
   margin-bottom: 2px;
   border-radius: 9px;
   border: 1px solid transparent;
-  transition: background 100ms ease, border-color 100ms ease;
+  transition:
+    background 100ms ease,
+    border-color 100ms ease;
   cursor: default;
 }
 
@@ -275,7 +285,7 @@ input:focus {
 }
 
 .row.open::before {
-  content: "";
+  content: '';
   position: absolute;
   left: 4px;
   top: 50%;
@@ -424,8 +434,13 @@ footer.busy .pulse {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .modal {
@@ -441,8 +456,12 @@ footer.busy .pulse {
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .panel {

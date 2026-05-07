@@ -1,0 +1,42 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - revive
+    - gocritic
+    - gocognit
+    - misspell
+
+  settings:
+    gocognit:
+      min-complexity: 30
+
+    revive:
+      rules:
+        - name: var-naming
+        - name: blank-imports
+        - name: context-as-argument
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: range-val-address
+        - name: time-equal
+        - name: unconditional-recursion
+        - name: waitgroup-by-value
+
+  exclusions:
+    generated: lax
+    paths:
+      - desktop/frontend/wailsjs
+      - desktop/frontend/node_modules
+      - web/node_modules
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

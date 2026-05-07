@@ -1,0 +1,30 @@
+repos:
+  - repo: local
+    hooks:
+      - id: golangci-lint
+        name: golangci-lint
+        entry: golangci-lint run ./...
+        language: system
+        types: [go]
+        pass_filenames: false
+
+      - id: go-mod-tidy
+        name: go mod tidy
+        entry: bash -c 'go mod tidy -diff'
+        language: system
+        files: '^(go\.mod|go\.sum)$'
+        pass_filenames: false
+
+      - id: prettier-desktop
+        name: prettier (desktop)
+        entry: bash -c 'cd desktop/frontend && npx prettier --check "src/**/*.{ts,css}"'
+        language: system
+        files: '^desktop/frontend/src/.*\.(ts|css)$'
+        pass_filenames: false
+
+      - id: eslint-desktop
+        name: eslint (desktop)
+        entry: bash -c 'cd desktop/frontend && npx eslint .'
+        language: system
+        files: '^desktop/frontend/src/.*\.ts$'
+        pass_filenames: false

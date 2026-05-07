@@ -79,13 +79,13 @@ func (s *Store) Ingest(ctx context.Context, source string) (*Document, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer reader.Close()
+	defer func() { _ = reader.Close() }()
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback(ctx)
+	defer func() { _ = tx.Rollback(ctx) }()
 
 	var jobID uuid.UUID
 	if err := tx.QueryRow(ctx, `insert into ingest_jobs (source, status) values ($1, 'running') returning id`, source).Scan(&jobID); err != nil {
@@ -335,7 +335,7 @@ func openSource(ctx context.Context, source string) (io.ReadCloser, string, stri
 			return nil, "", "", err
 		}
 		if res.StatusCode < 200 || res.StatusCode > 299 {
-			res.Body.Close()
+			_ = res.Body.Close()
 			return nil, "", "", fmt.Errorf("download failed: %s", res.Status)
 		}
 		return res.Body, filenameFromURL(url), url, nil

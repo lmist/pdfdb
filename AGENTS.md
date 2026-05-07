@@ -6,6 +6,26 @@
 
 The primary user-facing app is `PDF DB.app`, a tiny fixed-portrait Wails desktop app for macOS. It lists/searches database PDFs, imports PDFs from URLs or local files, warms the cache, opens PDFs in the real Zathura app, highlights currently open PDFs, and closes matching Zathura processes.
 
+## Quick Start (One Command)
+
+**Desktop app** (requires Wails + Go + Bun + active database profile):
+```sh
+cd desktop && wails dev
+```
+
+**Web reader** (requires Bun + running pdfdb server on port 8787):
+```sh
+cd web && bun install && bun run dev
+```
+
+**CLI server** (requires Go + DATABASE_URL in .env):
+```sh
+go run ./cmd/pdfdb serve
+```
+
+CI runs on every PR: `go test ./...`, `golangci-lint`, and `bun run build` for the desktop frontend.
+See `.github/workflows/ci.yml`.
+
 ## Layout
 
 - `cmd/pdfdb`: CLI entrypoint for schema setup, ingest, list, verify, HTTP serving, cached Zathura opens, and Keychain-backed profile management.
@@ -22,16 +42,42 @@ The primary user-facing app is `PDF DB.app`, a tiny fixed-portrait Wails desktop
 Use these checks before committing:
 
 ```sh
-go test ./...
+go test -count=1 ./...
+golangci-lint run ./...
+cd desktop/frontend && bun run test
 cd desktop && wails build
 ```
 
-Frontend-only desktop build:
+Frontend-only desktop build and tests:
 
 ```sh
 cd desktop/frontend
 bun install
 bun run build
+bun run test
+```
+
+Tests are run in CI on every PR (see `.github/workflows/ci.yml`).
+
+### Test Conventions
+
+- **Go**: test files use `*_test.go` suffix. Top-level test functions use `t.Parallel()` where safe (no shared OS resources). Test packages match the package under test.
+- **TypeScript (desktop)**: test files use `*.test.ts` suffix, co-located with source. Vitest with `describe`/`it` blocks. Utility functions are extracted to `src/utils.ts` so they can be tested independently of the DOM/API bridge.
+- **Coverage**: Go CI runs `go test -coverprofile=coverage.out -covermode=atomic`. Desktop frontend CI runs `bun run test` (vitest coverage configurable via `vitest.config.ts`).
+```
+
+Lint and format desktop frontend:
+
+```sh
+cd desktop/frontend
+bun run lint
+bun run format
+```
+
+Pre-commit hooks (runs all lint/format/checks automatically):
+
+```sh
+pre-commit install
 ```
 
 Web reader:
@@ -89,6 +135,12 @@ pdfdb open-all
 - Desktop build output: `desktop/build/bin/` is ignored.
 - Frontend dependencies: `desktop/frontend/node_modules/` and `web/node_modules/` are ignored.
 - `.env` is local only and ignored; never commit database URLs or Neon credentials.
+
+## Naming Conventions
+
+- **Go**: exported identifiers are PascalCase (e.g., `LoadDotEnv`), unexported are camelCase (e.g., `openSource`). Package names are lowercase, single-word where possible. Error variables follow the `errXxx` or `XxxError` pattern.
+- **TypeScript**: variables and functions use camelCase. React components use PascalCase (e.g., `App`, `PageCanvas`). Types and interfaces use PascalCase. Private class members may use a leading underscore. Constants may use UPPER_CASE.
+- **Files**: Go test files use `*_test.go`. TypeScript source files are lowercase with hyphens or camelCase.
 
 ## Important Decisions
 

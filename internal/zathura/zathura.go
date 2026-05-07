@@ -36,7 +36,7 @@ func Open(ctx context.Context, path string) error {
 	if openPath, err := exec.LookPath("open"); err == nil {
 		return exec.CommandContext(ctx, openPath, "-a", "Zathura", path).Run()
 	}
-	return errors.New("Zathura.app is not installed at /Applications/Zathura.app")
+	return errors.New("zathura.app is not installed at /Applications/Zathura.app")
 }
 
 func OpenDocuments(ctx context.Context, paths map[string]string) ([]OpenDocument, error) {

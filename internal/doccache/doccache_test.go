@@ -11,6 +11,7 @@ import (
 )
 
 func TestPathUsesSlugAndChecksum(t *testing.T) {
+	t.Parallel()
 	mgr := New(t.TempDir())
 	doc := store.Document{
 		ID:        uuid.New(),
@@ -28,6 +29,7 @@ func TestPathUsesSlugAndChecksum(t *testing.T) {
 }
 
 func TestHealthCountsValidCachedFiles(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	mgr := New(dir)
 	docs := []store.Document{

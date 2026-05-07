@@ -58,7 +58,7 @@ func NewApp() *App {
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	if _, err := a.profile.ActiveURL(); err == nil {
-		go a.WarmCache()
+		go func() { _ = a.WarmCache() }()
 	}
 }
 
@@ -122,7 +122,7 @@ func (a *App) SaveProfile(name, databaseURL string) error {
 	if err := st.Init(a.ctx); err != nil {
 		return err
 	}
-	go a.WarmCache()
+	go func() { _ = a.WarmCache() }()
 	return nil
 }
 
@@ -131,7 +131,7 @@ func (a *App) SetActiveProfile(name string) error {
 		return err
 	}
 	a.setDocs(nil)
-	go a.WarmCache()
+	go func() { _ = a.WarmCache() }()
 	return nil
 }
 

@@ -1,4 +1,5 @@
 import './styles.css';
+import { disabled, errorText, escapeAttr, escapeHTML, formatBytes } from './utils';
 
 type Profile = {
   name: string;
@@ -68,9 +69,9 @@ function emptyState(): AppState {
       cached: 0,
       total: 0,
       cacheDir: '',
-      message: 'loading'
+      message: 'loading',
     },
-    needsDb: true
+    needsDb: true,
   };
 }
 
@@ -134,7 +135,9 @@ const ICON_SEARCH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" 
 function render() {
   const docs = filteredDocuments();
   const active = state.profiles.find((profile) => profile.active);
-  const footerLabel = status || `${state.documents.length} ${state.documents.length === 1 ? 'document' : 'documents'}`;
+  const footerLabel =
+    status ||
+    `${state.documents.length} ${state.documents.length === 1 ? 'document' : 'documents'}`;
   root.innerHTML = `
     <section class="shell">
       <header class="titlebar">
@@ -148,7 +151,7 @@ function render() {
       <section class="health ${state.health.ready ? 'ok' : 'warn'}">
         <span class="dot"></span>
         <p>${escapeHTML(state.health.message || 'Checking')}</p>
-        <button data-action="warm" ${disabled()}>Warm cache</button>
+        <button data-action="warm" ${disabled(busy)}>Warm cache</button>
       </section>
 
       <section class="search">
@@ -162,8 +165,8 @@ function render() {
 
       <section class="ingest">
         <input id="ingest" type="text" placeholder="Paste URL or drop a path" value="${escapeAttr(ingestSource)}" autocomplete="off" spellcheck="false" />
-        <button data-action="ingest-url" ${disabled()}>Import</button>
-        <button data-action="ingest-file" ${disabled()}>Browse</button>
+        <button data-action="ingest-url" ${disabled(busy)}>Import</button>
+        <button data-action="ingest-file" ${disabled(busy)}>Browse</button>
       </section>
 
       <footer class="${busy ? 'busy' : ''}">
@@ -208,16 +211,24 @@ function renderSettings() {
           <span>Postgres URL</span>
           <input id="database-url" type="password" value="${escapeAttr(databaseURL)}" placeholder="postgresql://..." autocomplete="off" spellcheck="false" />
         </label>
-        <button class="primary" data-action="save-profile" ${disabled()}>Save to Keychain</button>
-        ${state.profiles.length ? `
+        <button class="primary" data-action="save-profile" ${disabled(busy)}>Save to Keychain</button>
+        ${
+          state.profiles.length
+            ? `
           <div class="profiles">
-            ${state.profiles.map((profile) => `
+            ${state.profiles
+              .map(
+                (profile) => `
               <button data-action="switch-profile" data-name="${escapeAttr(profile.name)}" class="${profile.active ? 'active' : ''}">
                 ${escapeHTML(profile.name)}
               </button>
-            `).join('')}
+            `,
+              )
+              .join('')}
           </div>
-        ` : ''}
+        `
+            : ''
+        }
       </section>
     </aside>
   `;
@@ -290,39 +301,6 @@ function onAction(event: Event) {
   if (action === 'ingest-file') {
     void run('Importing file', () => call('PickAndIngestFile'));
   }
-}
-
-function disabled() {
-  return busy ? 'disabled' : '';
-}
-
-function errorText(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function formatBytes(bytes: number) {
-  if (!bytes) return '0 B';
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-}
-
-function escapeHTML(value: string) {
-  return value.replace(/[&<>"']/g, (char) => entity(char));
-}
-
-function escapeAttr(value: string) {
-  return escapeHTML(value);
-}
-
-function entity(char: string) {
-  const entities: Record<string, string> = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;'
-  };
-  return entities[char] ?? char;
 }
 
 void refresh();

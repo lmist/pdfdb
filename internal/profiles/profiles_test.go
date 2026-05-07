@@ -22,6 +22,7 @@ func (m memorySecrets) Delete(service, user string) error {
 }
 
 func TestProfilesSaveAndActiveURL(t *testing.T) {
+	t.Parallel()
 	mgr := New(filepath.Join(t.TempDir(), "profiles.json"), memorySecrets{})
 	if err := mgr.Save("work", "postgres://example"); err != nil {
 		t.Fatal(err)
@@ -49,6 +50,7 @@ func TestProfilesSaveAndActiveURL(t *testing.T) {
 }
 
 func TestProfilesDeleteMovesActive(t *testing.T) {
+	t.Parallel()
 	mgr := New(filepath.Join(t.TempDir(), "profiles.json"), memorySecrets{})
 	if err := mgr.Save("a", "postgres://a"); err != nil {
 		t.Fatal(err)
