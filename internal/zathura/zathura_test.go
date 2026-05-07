@@ -1,6 +1,8 @@
 package zathura
 
 import (
+	"context"
+	"os/exec"
 	"testing"
 	"time"
 
@@ -27,5 +29,26 @@ func TestParseProcessesAndMatchOpenDocuments(t *testing.T) {
 	}
 	if open[0].PID != 101 || open[0].Slug != "dbos-provenance" {
 		t.Fatalf("open[0] = %#v", open[0])
+	}
+}
+
+func TestCloseReturnsAfterSignal(t *testing.T) {
+	cmd := exec.Command("sleep", "30")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if cmd.Process != nil {
+			_ = cmd.Process.Kill()
+		}
+	}()
+
+	start := time.Now()
+	err := closeOpenDocuments(context.Background(), []OpenDocument{{Slug: "paper", PID: cmd.Process.Pid, Path: "/tmp/paper.pdf"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+		t.Fatalf("Close took %s, expected immediate return", elapsed)
 	}
 }

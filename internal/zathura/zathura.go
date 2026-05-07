@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
-	"time"
 )
 
 const AppBinary = "/Applications/Zathura.app/Contents/MacOS/zathura"
@@ -56,6 +55,10 @@ func Close(ctx context.Context, slug string, path string) error {
 	if len(open) == 0 {
 		return nil
 	}
+	return closeOpenDocuments(ctx, open)
+}
+
+func closeOpenDocuments(ctx context.Context, open []OpenDocument) error {
 	for _, item := range open {
 		proc, err := os.FindProcess(item.PID)
 		if err != nil {
@@ -65,18 +68,7 @@ func Close(ctx context.Context, slug string, path string) error {
 			return fmt.Errorf("close zathura pid %d: %w", item.PID, err)
 		}
 	}
-	deadline := time.Now().Add(1500 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		stillOpen, err := OpenDocuments(ctx, map[string]string{slug: path})
-		if err != nil {
-			return err
-		}
-		if len(stillOpen) == 0 {
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return fmt.Errorf("zathura did not close %s after SIGTERM", slug)
+	return nil
 }
 
 func ListProcesses(ctx context.Context) ([]Process, error) {
