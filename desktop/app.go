@@ -155,12 +155,24 @@ func (a *App) WarmCache() error {
 }
 
 func (a *App) OpenDocument(slug string) error {
-	doc, ok := a.doc(slug)
-	if ok {
-		path := a.cache.Path(*doc)
-		return zathura.Open(a.ctx, path)
+	st, err := a.openStore()
+	if err != nil {
+		return err
 	}
-	return a.openDocumentFromDB(slug)
+	defer st.Close()
+	doc, ok := a.doc(slug)
+	if !ok {
+		loaded, err := st.GetDocument(a.ctx, slug)
+		if err != nil {
+			return err
+		}
+		doc = loaded
+	}
+	path, err := a.cache.Ensure(a.ctx, st, *doc)
+	if err != nil {
+		return err
+	}
+	return zathura.Open(a.ctx, path)
 }
 
 func (a *App) CloseDocument(slug string) error {

@@ -13,7 +13,10 @@ import (
 	"syscall"
 )
 
-const AppBinary = "/Applications/Zathura.app/Contents/MacOS/zathura"
+const (
+	AppBinary          = "/Applications/Zathura.app/Contents/MacOS/zathura"
+	LaunchServicesOpen = "/usr/bin/open"
+)
 
 type OpenDocument struct {
 	Slug string `json:"slug"`
@@ -30,11 +33,14 @@ func Open(ctx context.Context, path string) error {
 	if _, err := os.Stat(path); err != nil {
 		return fmt.Errorf("cached PDF is not available at %s: %w", path, err)
 	}
-	if _, err := os.Stat(AppBinary); err == nil {
-		return exec.CommandContext(ctx, AppBinary, "--fork", path).Start()
+	if _, err := os.Stat(LaunchServicesOpen); err == nil {
+		return exec.CommandContext(ctx, LaunchServicesOpen, "-a", "Zathura", path).Run()
 	}
 	if openPath, err := exec.LookPath("open"); err == nil {
 		return exec.CommandContext(ctx, openPath, "-a", "Zathura", path).Run()
+	}
+	if _, err := os.Stat(AppBinary); err == nil {
+		return exec.CommandContext(ctx, AppBinary, "--fork", path).Start()
 	}
 	return errors.New("zathura.app is not installed at /Applications/Zathura.app")
 }
