@@ -17,12 +17,12 @@ func main() {
 	app := NewApp()
 	err := wails.Run(&options.App{
 		Title:             "PDF DB",
-		Width:             320,
-		Height:            520,
-		MinWidth:          320,
-		MinHeight:         520,
-		MaxWidth:          320,
-		MaxHeight:         520,
+		Width:             360,
+		Height:            620,
+		MinWidth:          360,
+		MinHeight:         620,
+		MaxWidth:          360,
+		MaxHeight:         620,
 		DisableResize:     true,
 		HideWindowOnClose: true,
 		AssetServer: &assetserver.Options{

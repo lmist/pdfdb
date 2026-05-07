@@ -85,14 +85,17 @@ function call<T>(name: string, ...args: unknown[]): Promise<T> {
 async function refresh(silent = false) {
   try {
     if (!silent) status = 'Refreshing';
-    state = await call<AppState>('GetState');
+    const next = await call<AppState>('GetState');
+    const changed = JSON.stringify(next) !== JSON.stringify(state);
+    state = next;
     if (state.needsDb) showSettings = true;
     if (!silent) status = '';
+    if (changed || !silent) render();
   } catch (error) {
     state.error = errorText(error);
     if (!silent) status = '';
+    render();
   }
-  render();
 }
 
 async function run(label: string, work: () => Promise<unknown>) {
@@ -122,41 +125,50 @@ function filteredDocuments() {
   });
 }
 
+const ICON_SETTINGS = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>`;
+
+const ICON_CLOSE = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+
+const ICON_SEARCH = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
+
 function render() {
   const docs = filteredDocuments();
   const active = state.profiles.find((profile) => profile.active);
+  const footerLabel = status || `${state.documents.length} ${state.documents.length === 1 ? 'document' : 'documents'}`;
   root.innerHTML = `
     <section class="shell">
       <header class="titlebar">
-        <div>
+        <div class="brand">
           <strong>PDF DB</strong>
-          <span>${escapeHTML(active?.name ?? 'No database')}</span>
+          <span class="profile-name">${escapeHTML(active?.name ?? 'No database')}</span>
         </div>
-        <button class="icon" data-action="settings" title="Database settings">...</button>
+        <button class="icon" data-action="settings" title="Database settings">${ICON_SETTINGS}</button>
       </header>
 
       <section class="health ${state.health.ready ? 'ok' : 'warn'}">
-        <span></span>
+        <span class="dot"></span>
         <p>${escapeHTML(state.health.message || 'Checking')}</p>
-        <button data-action="warm" ${disabled()}>Warm</button>
+        <button data-action="warm" ${disabled()}>Warm cache</button>
       </section>
 
       <section class="search">
-        <input id="search" type="search" placeholder="Search PDFs" value="${escapeAttr(query)}" />
+        ${ICON_SEARCH}
+        <input id="search" type="search" placeholder="Search documents" value="${escapeAttr(query)}" autocomplete="off" spellcheck="false" />
       </section>
 
       <section class="list" aria-label="PDFs">
-        ${docs.map(renderDocument).join('') || '<p class="empty">No PDFs in this database.</p>'}
+        ${docs.map(renderDocument).join('') || '<p class="empty">No documents yet.<br/>Paste a URL below to import.</p>'}
       </section>
 
       <section class="ingest">
-        <input id="ingest" type="text" placeholder="Paste URL or path" value="${escapeAttr(ingestSource)}" />
+        <input id="ingest" type="text" placeholder="Paste URL or drop a path" value="${escapeAttr(ingestSource)}" autocomplete="off" spellcheck="false" />
         <button data-action="ingest-url" ${disabled()}>Import</button>
-        <button data-action="ingest-file" ${disabled()}>File</button>
+        <button data-action="ingest-file" ${disabled()}>Browse</button>
       </section>
 
-      <footer>
-        <span>${escapeHTML(status || `${state.documents.length} PDFs`)}</span>
+      <footer class="${busy ? 'busy' : ''}">
+        <span class="pulse"></span>
+        <span>${escapeHTML(footerLabel)}</span>
       </footer>
     </section>
     ${showSettings ? renderSettings() : ''}
@@ -165,14 +177,17 @@ function render() {
 }
 
 function renderDocument(doc: DocumentState) {
+  const subtitle = doc.pageCount ? `${doc.pageCount} pages` : doc.filename;
   return `
     <article class="row ${doc.open ? 'open' : ''}" data-slug="${escapeAttr(doc.slug)}" title="Double-click to open">
-      <div class="mark"></div>
+      <div class="glyph">PDF</div>
       <div class="meta">
         <h2>${escapeHTML(doc.title || doc.filename || doc.slug)}</h2>
-        <p>${escapeHTML(doc.pageCount ? `${doc.pageCount} pages` : doc.filename)} · ${formatBytes(doc.sizeBytes)}</p>
+        <p>${escapeHTML(subtitle)} &middot; ${formatBytes(doc.sizeBytes)}</p>
       </div>
-      <button data-action="close" data-slug="${escapeAttr(doc.slug)}" ${doc.open ? '' : 'disabled'} title="Close in Zathura">Close</button>
+      <div class="actions">
+        ${doc.open ? `<button class="icon close-btn" data-action="close" data-slug="${escapeAttr(doc.slug)}" title="Close in Zathura">${ICON_CLOSE}</button>` : ''}
+      </div>
     </article>
   `;
 }
@@ -183,24 +198,26 @@ function renderSettings() {
       <section class="panel">
         <header>
           <strong>Database</strong>
-          <button class="icon" data-action="settings" title="Close">x</button>
+          <button class="icon" data-action="settings" title="Close">${ICON_CLOSE}</button>
         </header>
         <label>
           <span>Profile</span>
-          <input id="profile-name" value="${escapeAttr(profileName)}" />
+          <input id="profile-name" value="${escapeAttr(profileName)}" autocomplete="off" spellcheck="false" />
         </label>
         <label>
           <span>Postgres URL</span>
-          <input id="database-url" type="password" value="${escapeAttr(databaseURL)}" placeholder="postgresql://..." />
+          <input id="database-url" type="password" value="${escapeAttr(databaseURL)}" placeholder="postgresql://..." autocomplete="off" spellcheck="false" />
         </label>
         <button class="primary" data-action="save-profile" ${disabled()}>Save to Keychain</button>
-        <div class="profiles">
-          ${state.profiles.map((profile) => `
-            <button data-action="switch-profile" data-name="${escapeAttr(profile.name)}" class="${profile.active ? 'active' : ''}">
-              ${escapeHTML(profile.name)}
-            </button>
-          `).join('')}
-        </div>
+        ${state.profiles.length ? `
+          <div class="profiles">
+            ${state.profiles.map((profile) => `
+              <button data-action="switch-profile" data-name="${escapeAttr(profile.name)}" class="${profile.active ? 'active' : ''}">
+                ${escapeHTML(profile.name)}
+              </button>
+            `).join('')}
+          </div>
+        ` : ''}
       </section>
     </aside>
   `;
@@ -224,7 +241,8 @@ function bind() {
     element.addEventListener('click', onAction);
   });
   document.querySelectorAll<HTMLElement>('.row').forEach((row) => {
-    row.addEventListener('dblclick', () => {
+    row.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('[data-action]')) return;
       const slug = row.dataset.slug;
       if (slug) void run('Opening', () => call('OpenDocument', slug));
     });

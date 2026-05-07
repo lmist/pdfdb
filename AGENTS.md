@@ -96,7 +96,7 @@ pdfdb open-all
 - The cache is disposable. Postgres remains durable source of truth.
 - Desktop close should be instant: send the signal and return; let UI polling refresh open state.
 - Zathura plugin work is not needed for this architecture unless adding a custom URI/MIME integration later.
-- Keep the app small and portrait-oriented; `desktop/main.go` fixes the Wails window at `320 x 520`.
+- Keep the app small and portrait-oriented; `desktop/main.go` fixes the Wails window at `360 x 620`.
 
 ## Git Hygiene
 
