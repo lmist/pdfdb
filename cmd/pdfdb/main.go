@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/lmist/pdfdb/internal/doccache"
@@ -186,7 +189,31 @@ func cmdServe(st *store.Store, args []string) error {
 	if _, _, err := net.SplitHostPort(addr); err != nil {
 		return fmt.Errorf("serve address must be host:port: %w", err)
 	}
-	return server.New(st).ListenAndServe(addr)
+
+	srv := server.New(st)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.ListenAndServe(addr) }()
+
+	select {
+	case err := <-errCh:
+		if errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			return err
+		}
+		if err := <-errCh; err != nil && !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	}
 }
 
 func cmdOpen(ctx context.Context, st *store.Store, args []string) error {
@@ -268,9 +295,9 @@ func cmdZathura(ctx context.Context, st *store.Store, args []string) error {
 	}
 
 	_ = exec.CommandContext(ctx, "open", "-a", "Zathura").Run()
-	time.Sleep(600 * time.Millisecond)
+	waitForZathura(ctx, 3*time.Second)
 	_ = exec.CommandContext(ctx, "open", "-a", "Zathura", paths[0]).Run()
-	time.Sleep(600 * time.Millisecond)
+	waitForZathura(ctx, 3*time.Second)
 
 	for _, path := range paths {
 		cmd := exec.CommandContext(ctx, "open", "-a", "Zathura", path)
@@ -327,9 +354,34 @@ func appleScriptList(values []string) []string {
 }
 
 func appleScriptString(value string) string {
+	value = strings.Map(func(r rune) rune {
+		switch r {
+		case '\r', '\n', '\t':
+			return ' '
+		}
+		return r
+	}, value)
 	value = strings.ReplaceAll(value, `\`, `\\`)
 	value = strings.ReplaceAll(value, `"`, `\"`)
 	return `"` + value + `"`
+}
+
+// waitForZathura polls `pgrep -x zathura` every 100 ms until it succeeds or
+// the deadline elapses. macOS `open -a Zathura` returns immediately even when
+// the app is still bootstrapping; subsequent open invocations against a
+// not-yet-ready Zathura silently drop the file argument, so we must block
+// until at least one zathura process exists.
+func waitForZathura(ctx context.Context, timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if err := exec.CommandContext(ctx, "pgrep", "-x", "zathura").Run(); err == nil {
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func usage() {
@@ -341,14 +393,13 @@ func usage() {
   verify                       verify manifests and reconstructed SHA-256 values
   serve [host:port]            run the range-capable API
   open <id-or-slug|all>        open cached PDF(s) in Zathura
-  open-all                      open every cached PDF in Zathura
-  zathura [id-or-slug|all]      start /Applications/Zathura.app from DB cache
-  zathura-pick                  choose a database PDF and open it in Zathura
-  profile list|save|use|delete  manage Keychain-backed database profiles`)
+  open-all                     open every cached PDF in Zathura
+  zathura [id-or-slug|all]     start /Applications/Zathura.app from DB cache
+  zathura-pick                 choose a database PDF and open it in Zathura
+  profile list|save|use|delete manage Keychain-backed database profiles`)
 }
 
 func fatal(err error) {
 	fmt.Fprintf(os.Stderr, "pdfdb: %v\n", err)
-	time.Sleep(10 * time.Millisecond)
 	os.Exit(1)
 }

@@ -13,11 +13,6 @@ The primary user-facing app is `PDF DB.app`, a tiny fixed-portrait Wails desktop
 cd desktop && wails dev
 ```
 
-**Web reader** (requires Bun + running pdfdb server on port 8787):
-```sh
-cd web && bun install && bun run dev
-```
-
 **CLI server** (requires Go + DATABASE_URL in .env):
 ```sh
 go run ./cmd/pdfdb serve
@@ -34,8 +29,7 @@ See `.github/workflows/ci.yml`.
 - `internal/doccache`: immutable local cache files under `~/Library/Caches/pdfdb/documents`.
 - `internal/profiles`: database profile config plus macOS Keychain storage for database URLs.
 - `internal/zathura`: Zathura process detection, cached-file open, and immediate close signaling.
-- `internal/server`: range-capable HTTP API used by the web reader.
-- `web`: Bun/Vite web reader.
+- `internal/server`: range-capable HTTP API used by external clients.
 
 ## Build And Test
 
@@ -78,14 +72,6 @@ Pre-commit hooks (runs all lint/format/checks automatically):
 
 ```sh
 pre-commit install
-```
-
-Web reader:
-
-```sh
-cd web
-bun install
-bun run dev
 ```
 
 Wails must be installed for desktop work:
@@ -133,7 +119,7 @@ pdfdb open-all
 - Non-secret profile metadata: user config dir, `pdfdb/profiles.json`.
 - PDF cache: `~/Library/Caches/pdfdb/documents`.
 - Desktop build output: `desktop/build/bin/` is ignored.
-- Frontend dependencies: `desktop/frontend/node_modules/` and `web/node_modules/` are ignored.
+- Frontend dependencies: `desktop/frontend/node_modules/` is ignored.
 - `.env` is local only and ignored; never commit database URLs or Neon credentials.
 
 ## Naming Conventions

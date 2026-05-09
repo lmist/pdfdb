@@ -4,12 +4,18 @@
 
 bin/
 dist/
-web/dist/
-web/node_modules/
-!desktop/frontend/dist/
-!desktop/frontend/dist/**
 desktop/build/bin/
 desktop/frontend/node_modules/
 desktop/frontend/package.json.md5
+
+# Wails embeds frontend/dist via `go:embed all:frontend/dist` (desktop/main.go),
+# and the binding stubs under desktop/frontend/wailsjs/ are needed when consumers
+# run `go install github.com/lmist/pdfdb/...@latest` without a frontend build
+# step. Override the global dist/ rule so both stay tracked.
+!desktop/frontend/dist/
+!desktop/frontend/dist/**
+
+# Neon project metadata; not a credential, but environment-specific.
+.neon
 
 .DS_Store

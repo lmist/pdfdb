@@ -5,16 +5,29 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/lmist/pdfdb/internal/store"
 )
 
 type Manager struct {
 	dir string
+
+	verifyMu sync.Mutex
+	verified map[string]verifyEntry
+
+	ensureLocks sync.Map // path -> *sync.Mutex
+}
+
+type verifyEntry struct {
+	mtime time.Time
+	size  int64
+	sha   string
 }
 
 type Health struct {
@@ -30,11 +43,11 @@ func NewDefault() (*Manager, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Manager{dir: filepath.Join(dir, "pdfdb", "documents")}, nil
+	return New(filepath.Join(dir, "pdfdb", "documents")), nil
 }
 
 func New(dir string) *Manager {
-	return &Manager{dir: dir}
+	return &Manager{dir: dir, verified: map[string]verifyEntry{}}
 }
 
 func (m *Manager) Dir() string {
@@ -59,6 +72,9 @@ func (m *Manager) Path(doc store.Document) string {
 
 func (m *Manager) Ensure(ctx context.Context, st *store.Store, doc store.Document) (string, error) {
 	path := m.Path(doc)
+	mu := m.ensureLock(path)
+	mu.Lock()
+	defer mu.Unlock()
 	if m.valid(path, doc) {
 		return path, nil
 	}
@@ -151,7 +167,44 @@ func (m *Manager) Paths(docs []store.Document) map[string]string {
 	return paths
 }
 
+func (m *Manager) ensureLock(path string) *sync.Mutex {
+	if v, ok := m.ensureLocks.Load(path); ok {
+		return v.(*sync.Mutex)
+	}
+	v, _ := m.ensureLocks.LoadOrStore(path, &sync.Mutex{})
+	return v.(*sync.Mutex)
+}
+
 func (m *Manager) valid(path string, doc store.Document) bool {
 	info, err := os.Stat(path)
-	return err == nil && info.Mode().IsRegular() && info.Size() == doc.SizeBytes
+	if err != nil || !info.Mode().IsRegular() || info.Size() != doc.SizeBytes {
+		return false
+	}
+	m.verifyMu.Lock()
+	cached, hit := m.verified[path]
+	m.verifyMu.Unlock()
+	if hit && cached.mtime.Equal(info.ModTime()) && cached.size == info.Size() {
+		return cached.sha == doc.SHA256
+	}
+	sum, err := hashFile(path)
+	if err != nil {
+		return false
+	}
+	m.verifyMu.Lock()
+	m.verified[path] = verifyEntry{mtime: info.ModTime(), size: info.Size(), sha: sum}
+	m.verifyMu.Unlock()
+	return sum == doc.SHA256
+}
+
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }

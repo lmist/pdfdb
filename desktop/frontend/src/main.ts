@@ -156,7 +156,7 @@ function render() {
 
       <section class="search">
         ${ICON_SEARCH}
-        <input id="search" type="search" placeholder="Search documents" value="${escapeAttr(query)}" autocomplete="off" spellcheck="false" />
+        <input id="search" type="search" placeholder="Search documents" value="${escapeAttr(query)}" autocomplete="off" spellcheck="false" aria-label="Search documents" />
       </section>
 
       <section class="list" aria-label="PDFs">
@@ -164,7 +164,7 @@ function render() {
       </section>
 
       <section class="ingest">
-        <input id="ingest" type="text" placeholder="Paste URL or drop a path" value="${escapeAttr(ingestSource)}" autocomplete="off" spellcheck="false" />
+        <input id="ingest" type="text" placeholder="Paste URL or drop a path" value="${escapeAttr(ingestSource)}" autocomplete="off" spellcheck="false" aria-label="Import URL or path" />
         <button data-action="ingest-url" ${disabled(busy)}>Import</button>
         <button data-action="ingest-file" ${disabled(busy)}>Browse</button>
       </section>
@@ -234,13 +234,34 @@ function renderSettings() {
   `;
 }
 
+let searchTimer: number | undefined;
+
+function triggerIngestUrl() {
+  const source = ingestSource;
+  void run('Importing', async () => {
+    await call('IngestSource', source);
+    ingestSource = '';
+  });
+}
+
 function bind() {
   document.querySelector<HTMLInputElement>('#search')?.addEventListener('input', (event) => {
     query = (event.target as HTMLInputElement).value;
-    render();
+    if (searchTimer !== undefined) clearTimeout(searchTimer);
+    searchTimer = window.setTimeout(() => {
+      searchTimer = undefined;
+      render();
+    }, 150);
   });
-  document.querySelector<HTMLInputElement>('#ingest')?.addEventListener('input', (event) => {
+  const ingestEl = document.querySelector<HTMLInputElement>('#ingest');
+  ingestEl?.addEventListener('input', (event) => {
     ingestSource = (event.target as HTMLInputElement).value;
+  });
+  ingestEl?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && !busy) {
+      event.preventDefault();
+      triggerIngestUrl();
+    }
   });
   document.querySelector<HTMLInputElement>('#profile-name')?.addEventListener('input', (event) => {
     profileName = (event.target as HTMLInputElement).value;
@@ -291,11 +312,7 @@ function onAction(event: Event) {
     return;
   }
   if (action === 'ingest-url') {
-    const source = ingestSource;
-    void run('Importing', async () => {
-      await call('IngestSource', source);
-      ingestSource = '';
-    });
+    triggerIngestUrl();
     return;
   }
   if (action === 'ingest-file') {
@@ -304,4 +321,16 @@ function onAction(event: Event) {
 }
 
 void refresh();
-setInterval(() => void refresh(true), 1000);
+const pollHandle = window.setInterval(() => void refresh(true), 1000);
+
+window.addEventListener('beforeunload', () => {
+  window.clearInterval(pollHandle);
+  if (searchTimer !== undefined) clearTimeout(searchTimer);
+});
+
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && showSettings) {
+    showSettings = false;
+    render();
+  }
+});

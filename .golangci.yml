@@ -4,6 +4,7 @@ linters:
   enable:
     - errcheck
     - govet
+    - gosec
     - ineffassign
     - staticcheck
     - unused
@@ -15,6 +16,10 @@ linters:
   settings:
     gocognit:
       min-complexity: 30
+
+    gosec:
+      excludes:
+        - G104
 
     revive:
       rules:
@@ -34,7 +39,6 @@ linters:
     paths:
       - desktop/frontend/wailsjs
       - desktop/frontend/node_modules
-      - web/node_modules
 
 formatters:
   enable:

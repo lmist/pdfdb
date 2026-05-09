@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -43,22 +44,28 @@ type DocumentState struct {
 	Open      bool   `json:"open"`
 }
 
-func NewApp() *App {
+func NewApp() (*App, error) {
 	mgr, err := profiles.NewDefault()
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("profile manager: %w", err)
 	}
 	cache, err := doccache.NewDefault()
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("document cache: %w", err)
 	}
-	return &App{profile: mgr, cache: cache, docs: map[string]store.Document{}}
+	return &App{profile: mgr, cache: cache, docs: map[string]store.Document{}}, nil
 }
 
 func (a *App) Startup(ctx context.Context) {
 	a.ctx = ctx
 	if _, err := a.profile.ActiveURL(); err == nil {
-		go func() { _ = a.WarmCache() }()
+		go a.warmCacheBackground()
+	}
+}
+
+func (a *App) warmCacheBackground() {
+	if err := a.WarmCache(); err != nil {
+		slog.Warn("warm cache", "err", err)
 	}
 }
 
@@ -122,7 +129,7 @@ func (a *App) SaveProfile(name, databaseURL string) error {
 	if err := st.Init(a.ctx); err != nil {
 		return err
 	}
-	go func() { _ = a.WarmCache() }()
+	go a.warmCacheBackground()
 	return nil
 }
 
@@ -131,7 +138,7 @@ func (a *App) SetActiveProfile(name string) error {
 		return err
 	}
 	a.setDocs(nil)
-	go func() { _ = a.WarmCache() }()
+	go a.warmCacheBackground()
 	return nil
 }
 
@@ -239,23 +246,6 @@ func (a *App) openStore() (*store.Store, error) {
 		return nil, err
 	}
 	return store.Open(a.ctx, databaseURL)
-}
-
-func (a *App) openDocumentFromDB(slug string) error {
-	st, err := a.openStore()
-	if err != nil {
-		return err
-	}
-	defer st.Close()
-	doc, err := st.GetDocument(a.ctx, slug)
-	if err != nil {
-		return err
-	}
-	path, err := a.cache.Ensure(a.ctx, st, *doc)
-	if err != nil {
-		return err
-	}
-	return zathura.Open(a.ctx, path)
 }
 
 func (a *App) warmDocs(docs []store.Document) {
