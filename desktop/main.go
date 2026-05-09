@@ -14,8 +14,11 @@ import (
 var assets embed.FS
 
 func main() {
-	app := NewApp()
-	err := wails.Run(&options.App{
+	app, err := NewApp()
+	if err != nil {
+		log.Fatalf("init: %v", err)
+	}
+	err = wails.Run(&options.App{
 		Title:             "PDF DB",
 		Width:             360,
 		Height:            620,

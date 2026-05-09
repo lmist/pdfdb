@@ -20,6 +20,7 @@ func TestParseRange(t *testing.T) {
 		{name: "clamped", header: "bytes=90-999", size: 100, start: 90, end: 100, partial: true},
 		{name: "outside", header: "bytes=100-101", size: 100, wantErr: true},
 		{name: "invalid", header: "items=1-2", size: 100, wantErr: true},
+		{name: "multi range", header: "bytes=0-100,200-300", size: 1000, wantErr: true},
 	}
 
 	for _, tt := range tests {
@@ -38,5 +39,28 @@ func TestParseRange(t *testing.T) {
 				t.Fatalf("got %d %d %v, want %d %d %v", start, end, partial, tt.start, tt.end, tt.partial)
 			}
 		})
+	}
+}
+
+func TestIfNoneMatch(t *testing.T) {
+	t.Parallel()
+	etag := `"abc"`
+	if !ifNoneMatch(etag, etag) {
+		t.Fatal("exact match should hit")
+	}
+	if !ifNoneMatch(`W/`+etag, etag) {
+		t.Fatal("weak prefix should match strong tag")
+	}
+	if !ifNoneMatch(`"x", "y", `+etag, etag) {
+		t.Fatal("list with match should hit")
+	}
+	if !ifNoneMatch("*", etag) {
+		t.Fatal("wildcard should match")
+	}
+	if ifNoneMatch(`"different"`, etag) {
+		t.Fatal("non-matching tag should miss")
+	}
+	if ifNoneMatch("", etag) {
+		t.Fatal("empty header should miss")
 	}
 }

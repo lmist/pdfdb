@@ -2,7 +2,7 @@
 
 # pdfdb
 
-Database-backed PDF reader workspace. Postgres stores PDF bytes as content-addressed chunks. Zathura reads immutable local cache files that are reconstructed from the database, and the web UI reads through the range-capable Go API.
+Database-backed PDF reader workspace. Postgres stores PDF bytes as content-addressed chunks. Zathura reads immutable local cache files that are reconstructed from the database, and the desktop app drives the rest of the workflow on top of the range-capable Go API.
 
 `PDF DB.app` is the pocket desktop controller: a fixed portrait macOS app that stores database profiles in Keychain, warms the local PDF cache, lists/searches PDFs, imports URLs or files, opens PDFs in Zathura, highlights open Zathura documents, and closes matching Zathura windows.
 
@@ -45,14 +45,6 @@ open "build/bin/PDF DB.app"
 
 From there, use the app instead of the CLI for normal reading: search the database, double-click a PDF to open it in Zathura, use the green open indicators to see active Zathura documents, close them from the row button, and import new PDFs from either a URL or a local file.
 
-In another shell:
-
-```sh
-cd web
-bun install
-bun run dev
-```
-
 For Zathura:
 
 ```sh
@@ -87,7 +79,7 @@ pdfdb profile delete <name>        remove a database profile
 For a database-backed picker inside Zathura, add this to `~/.config/zathura/zathurarc`:
 
 ```text
-map <C-o> exec /Users/lou/go/bin/pdfdb zathura-pick
+map <C-o> exec /path/to/pdfdb zathura-pick
 ```
 
-Adjust the binary path if `go env GOPATH` is not `/Users/lou/go`. That gives Zathura a database-connected open action: press `Ctrl-o`, pick from the pdfdb library, and the selected PDF opens in the desktop Zathura app. A true Zathura plugin is a renderer plugin for a MIME type, not a general UI sidebar extension; the installed API exposes document/page/index/render hooks, not a global file-tree panel.
+Use the absolute path printed by `which pdfdb` (typically `$(go env GOPATH)/bin/pdfdb` after `go install`). That gives Zathura a database-connected open action: press `Ctrl-o`, pick from the pdfdb library, and the selected PDF opens in the desktop Zathura app. A true Zathura plugin is a renderer plugin for a MIME type, not a general UI sidebar extension; the installed API exposes document/page/index/render hooks, not a global file-tree panel.

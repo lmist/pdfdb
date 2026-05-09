@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lmist/pdfdb/internal/store"
 )
@@ -17,6 +18,7 @@ import (
 type Server struct {
 	store *store.Store
 	mux   *http.ServeMux
+	http  *http.Server
 }
 
 func New(st *store.Store) *Server {
@@ -27,7 +29,22 @@ func New(st *store.Store) *Server {
 
 func (s *Server) ListenAndServe(addr string) error {
 	slog.Info("serving pdfdb api", "addr", addr)
-	return http.ListenAndServe(addr, s)
+	s.http = &http.Server{
+		Addr:              addr,
+		Handler:           s,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      5 * time.Minute,
+		IdleTimeout:       2 * time.Minute,
+	}
+	return s.http.ListenAndServe()
+}
+
+func (s *Server) Shutdown(ctx context.Context) error {
+	if s.http == nil {
+		return nil
+	}
+	return s.http.Shutdown(ctx)
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +93,14 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	etag := `"` + doc.SHA256 + `"`
+	w.Header().Set("ETag", etag)
+
+	if r.Header.Get("Range") == "" && ifNoneMatch(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
 	start, end, partial, err := parseRange(r.Header.Get("Range"), doc.SizeBytes)
 	if err != nil {
 		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", doc.SizeBytes))
@@ -98,6 +123,23 @@ func (s *Server) handleFile(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusPartialContent)
 	}
 	_, _ = w.Write(data)
+}
+
+func ifNoneMatch(header, etag string) bool {
+	if header == "" {
+		return false
+	}
+	if header == "*" {
+		return true
+	}
+	for _, tag := range strings.Split(header, ",") {
+		tag = strings.TrimSpace(tag)
+		tag = strings.TrimPrefix(tag, "W/")
+		if tag == etag {
+			return true
+		}
+	}
+	return false
 }
 
 func parseRange(header string, size int64) (int64, int64, bool, error) {
@@ -154,6 +196,3 @@ func sanitizeHeader(value string) string {
 	return strings.ReplaceAll(value, `"`, `'`)
 }
 
-func ShutdownContext() context.Context {
-	return context.Background()
-}

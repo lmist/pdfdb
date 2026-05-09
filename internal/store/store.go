@@ -8,11 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
-	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +24,24 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const ChunkSize = 2 * 1024 * 1024
+// ChunkSize is the per-chunk byte budget for PDF ingest. 2 MiB is small
+// enough to fit a single bytea TOAST page comfortably and large enough that
+// a 50 MB paper produces only ~25 chunks. Override with PDFDB_CHUNK_SIZE.
+var ChunkSize = chunkSizeFromEnv(2 * 1024 * 1024)
+
+func chunkSizeFromEnv(def int64) int64 {
+	v := strings.TrimSpace(os.Getenv("PDFDB_CHUNK_SIZE"))
+	if v == "" {
+		return def
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n <= 0 {
+		return def
+	}
+	return n
+}
+
+var httpClient = &http.Client{Timeout: 60 * time.Second}
 
 type Store struct {
 	pool *pgxpool.Pool
@@ -97,7 +115,7 @@ func (s *Store) Ingest(ctx context.Context, source string) (*Document, error) {
 	tee := io.TeeReader(reader, io.MultiWriter(fullHash, &all))
 
 	var refs []chunkRef
-	buf := make([]byte, ChunkSize)
+	buf := make([]byte, int(ChunkSize))
 	var offset int64
 	for {
 		n, readErr := io.ReadFull(tee, buf)
@@ -158,14 +176,24 @@ returning id, slug, title, filename, mime, coalesce(source_url, ''), sha256, siz
 		markJobFailed(ctx, tx, jobID, err)
 		return nil, err
 	}
+	batch := &pgx.Batch{}
 	for i, ref := range refs {
-		if _, err := tx.Exec(ctx, `
+		batch.Queue(`
 insert into document_chunks (document_id, ordinal, chunk_sha256, byte_start, byte_end)
 values ($1, $2, $3, $4, $5)
-`, doc.ID, i, ref.SHA256, ref.Start, ref.End); err != nil {
+`, doc.ID, i, ref.SHA256, ref.Start, ref.End)
+	}
+	br := tx.SendBatch(ctx, batch)
+	for range refs {
+		if _, err := br.Exec(); err != nil {
+			_ = br.Close()
 			markJobFailed(ctx, tx, jobID, err)
 			return nil, err
 		}
+	}
+	if err := br.Close(); err != nil {
+		markJobFailed(ctx, tx, jobID, err)
+		return nil, err
 	}
 
 	if _, err := tx.Exec(ctx, `
@@ -194,7 +222,9 @@ on conflict (sha256) do nothing
 }
 
 func markJobFailed(ctx context.Context, tx pgx.Tx, jobID uuid.UUID, err error) {
-	_, _ = tx.Exec(ctx, `update ingest_jobs set status = 'failed', error = $2, updated_at = now() where id = $1`, jobID, err.Error())
+	if _, txErr := tx.Exec(ctx, `update ingest_jobs set status = 'failed', error = $2, updated_at = now() where id = $1`, jobID, err.Error()); txErr != nil {
+		slog.Error("mark ingest job failed", "jobID", jobID, "cause", err, "txErr", txErr)
+	}
 }
 
 func (s *Store) ListDocuments(ctx context.Context) ([]Document, error) {
@@ -330,7 +360,7 @@ func openSource(ctx context.Context, source string) (io.ReadCloser, string, stri
 		if err != nil {
 			return nil, "", "", err
 		}
-		res, err := http.DefaultClient.Do(req)
+		res, err := httpClient.Do(req)
 		if err != nil {
 			return nil, "", "", err
 		}
@@ -384,8 +414,3 @@ func nullIfEmpty(value string) any {
 	return value
 }
 
-func SortDocumentsByFilename(docs []Document) {
-	sort.Slice(docs, func(i, j int) bool {
-		return docs[i].Filename < docs[j].Filename
-	})
-}

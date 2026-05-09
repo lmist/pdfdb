@@ -1,3 +1,11 @@
+// Package zathura wires the desktop app and CLI to a local Zathura install.
+//
+// macOS-only: the open path goes through `/usr/bin/open` and the binary
+// fallback hardcodes `/Applications/Zathura.app`. OpenDocuments derives
+// state by argv-grepping `ps -axo`, which is best-effort: a Zathura window
+// opened from outside pdfdb that happens to point at the same cached PDF
+// will be reported as open by this app, and a window started before the
+// cache path was known may be missed until the next refresh.
 package zathura
 
 import (

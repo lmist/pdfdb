@@ -1,0 +1,18 @@
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    schedule:
+      interval: weekly
+
+  # The frontend is managed with bun, but dependabot reads package.json via the
+  # npm ecosystem and proposes semver-bound updates regardless of lockfile.
+  - package-ecosystem: npm
+    directory: "/desktop/frontend"
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
